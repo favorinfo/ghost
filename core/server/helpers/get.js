@@ -105,7 +105,7 @@ get = function get(resource, options) {
         return Promise.resolve();
     }
 
-    if (!_.contains(resources, resource)) {
+    if (!_.includes(resources, resource)) {
         data.error = i18n.t('warnings.helpers.get.invalidResource');
         errors.logWarn(data.error);
         return Promise.resolve(options.inverse(self, {data: data}));
@@ -148,7 +148,7 @@ module.exports = function getWithLabs(resource, options) {
         errorMessages = [
             i18n.t('warnings.helpers.get.helperNotAvailable'),
             i18n.t('warnings.helpers.get.apiMustBeEnabled'),
-            i18n.t('warnings.helpers.get.seeLink', {url: 'http://support.ghost.org/public-api-beta'})
+            i18n.t('warnings.helpers.get.seeLink', {url: 'https://help.ghost.org/hc/en-us/articles/115000301672-Public-API-Beta'})
         ];
 
     if (labs.isSet('publicAPI') === true) {

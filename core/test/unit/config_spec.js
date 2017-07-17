@@ -1,22 +1,29 @@
-/*globals describe, it, before, beforeEach, afterEach */
 var should         = require('should'),
     sinon          = require('sinon'),
     Promise        = require('bluebird'),
+    moment         = require('moment'),
     path           = require('path'),
     fs             = require('fs'),
     _              = require('lodash'),
 
     testUtils      = require('../utils'),
-	i18n            = require('../../server/i18n'),
+    i18n           = require('../../server/i18n'),
+    /*jshint unused:false*/
+    db             = require('../../server/data/db/connection'),
 
     // Thing we are testing
     configUtils    = require('../utils/configUtils'),
     config         = configUtils.config,
     // storing current environment
     currentEnv     = process.env.NODE_ENV;
+
 i18n.init();
 
 describe('Config', function () {
+    before(function () {
+        configUtils.restore();
+    });
+
     afterEach(function () {
         configUtils.restore();
     });
@@ -29,7 +36,8 @@ describe('Config', function () {
                     title: 'casper',
                     description: 'casper',
                     logo: 'casper',
-                    cover: 'casper'
+                    cover: 'casper',
+                    timezone: 'Etc/UTC'
                 }
             });
         });
@@ -38,7 +46,7 @@ describe('Config', function () {
             var themeConfig = config.theme;
 
             // This will fail if there are any extra keys
-            themeConfig.should.have.keys('url', 'title', 'description', 'logo', 'cover');
+            themeConfig.should.have.keys('url', 'title', 'description', 'logo', 'cover', 'timezone');
         });
 
         it('should have the correct values for each key', function () {
@@ -50,6 +58,35 @@ describe('Config', function () {
             themeConfig.should.have.property('description', 'casper');
             themeConfig.should.have.property('logo', 'casper');
             themeConfig.should.have.property('cover', 'casper');
+            themeConfig.should.have.property('timezone', 'Etc/UTC');
+        });
+    });
+
+    describe('Timezone default', function () {
+        it('should use timezone from settings when set', function () {
+            var themeConfig = config.theme;
+
+            // Check values are as we expect
+            themeConfig.should.have.property('timezone', 'Etc/UTC');
+            themeConfig.should.have.property('url');
+
+            configUtils.set({
+                theme: {
+                    timezone: 'Africa/Cairo'
+                }
+            });
+
+            config.theme.should.have.property('timezone', 'Africa/Cairo');
+            config.theme.should.have.property('url');
+        });
+
+        it('should set theme object with timezone by default', function () {
+            var themeConfig = configUtils.defaultConfig;
+
+            // Check values are as we expect
+            themeConfig.should.have.property('theme');
+            themeConfig.theme.should.have.property('timezone', 'Etc/UTC');
+            themeConfig.theme.should.have.property('url');
         });
     });
 
@@ -63,19 +100,17 @@ describe('Config', function () {
                 'subdir',
                 'config',
                 'configExample',
-                'storage',
+                'storagePath',
                 'contentPath',
                 'corePath',
                 'themePath',
                 'appPath',
+                'internalAppPath',
                 'imagesPath',
                 'imagesRelPath',
                 'adminViews',
                 'helperTemplates',
-                'exportPath',
-                'lang',
                 'availableThemes',
-                'availableApps',
                 'clientAssets'
             );
         });
@@ -139,13 +174,18 @@ describe('Config', function () {
 
     describe('Storage', function () {
         it('should default to local-file-store', function () {
-            var storagePath = path.join(config.paths.corePath, '/server/storage/', 'local-file-store');
+            config.paths.should.have.property('storagePath', {
+                default: path.join(config.paths.corePath, '/server/storage/'),
+                custom:  path.join(config.paths.contentPath, 'storage/')
+            });
 
-            config.paths.should.have.property('storage', storagePath);
-            config.storage.should.have.property('active', 'local-file-store');
+            config.storage.should.have.property('active', {
+                images: 'local-file-store',
+                themes: 'local-file-store'
+            });
         });
 
-        it('should allow setting a custom active storage', function () {
+        it('should allow setting a custom active storage as string', function () {
             var storagePath = path.join(config.paths.contentPath, 'storage', 's3');
 
             configUtils.set({
@@ -155,9 +195,47 @@ describe('Config', function () {
                 }
             });
 
-            config.paths.should.have.property('storage', storagePath);
-            config.storage.should.have.property('active', 's3');
+            config.storage.should.have.property('active', {
+                images: 's3',
+                themes: 'local-file-store'
+            });
+
             config.storage.should.have.property('s3', {});
+        });
+
+        it('should use default theme adapter when passing an object', function () {
+            var storagePath = path.join(config.paths.contentPath, 'storage', 's3');
+
+            configUtils.set({
+                storage: {
+                    active: {
+                        themes: 's3'
+                    }
+                }
+            });
+
+            config.storage.should.have.property('active', {
+                images: 'local-file-store',
+                themes: 'local-file-store'
+            });
+        });
+
+        it('should allow setting a custom active storage as object', function () {
+            var storagePath = path.join(config.paths.contentPath, 'storage', 's3');
+
+            configUtils.set({
+                storage: {
+                    active: {
+                        images: 's2',
+                        themes: 'local-file-store'
+                    }
+                }
+            });
+
+            config.storage.should.have.property('active', {
+                images: 's2',
+                themes: 'local-file-store'
+            });
         });
     });
 
@@ -189,6 +267,9 @@ describe('Config', function () {
                 configUtils.set({url: 'http://my-ghost-blog.com/blog'});
                 config.urlJoin('blog', 'blog/about').should.equal('blog/about');
                 config.urlJoin('blog/', 'blog/about').should.equal('blog/about');
+                configUtils.set({url: 'http://my-ghost-blog.com/my/blog'});
+                config.urlJoin('my/blog', 'my/blog/about').should.equal('my/blog/about');
+                config.urlJoin('my/blog/', 'my/blog/about').should.equal('my/blog/about');
             });
         });
 
@@ -263,7 +344,7 @@ describe('Config', function () {
 
             it('should return url for a post from post object', function () {
                 var testContext = 'post',
-                    testData = {post: testUtils.DataGenerator.Content.posts[2]};
+                    testData = {post: _.cloneDeep(testUtils.DataGenerator.Content.posts[2])};
 
                 // url is now provided on the postmodel, permalinkSetting tests are in the model_post_spec.js test
                 testData.post.url = '/short-and-sweet/';
@@ -349,6 +430,12 @@ describe('Config', function () {
                 testData = {nav: {url: 'http://my-ghost-blog.com/short-and-sweet/'}, secure: true};
                 config.urlFor(testContext, testData).should.equal('https://my-ghost-blog.com/short-and-sweet/');
 
+                testData = {nav: {url: 'http://my-ghost-blog.com:3000/'}};
+                config.urlFor(testContext, testData).should.equal('http://my-ghost-blog.com:3000/');
+
+                testData = {nav: {url: 'http://my-ghost-blog.com:3000/short-and-sweet/'}};
+                config.urlFor(testContext, testData).should.equal('http://my-ghost-blog.com:3000/short-and-sweet/');
+
                 testData = {nav: {url: 'http://sub.my-ghost-blog.com/'}};
                 config.urlFor(testContext, testData).should.equal('http://sub.my-ghost-blog.com/');
 
@@ -360,6 +447,12 @@ describe('Config', function () {
 
                 testData = {nav: {url: '#this-anchor'}};
                 config.urlFor(testContext, testData).should.equal('#this-anchor');
+
+                testData = {nav: {url: 'http://some-external-page.com/my-ghost-blog.com'}};
+                config.urlFor(testContext, testData).should.equal('http://some-external-page.com/my-ghost-blog.com');
+
+                testData = {nav: {url: 'http://some-external-page.com/stuff-my-ghost-blog.com-around'}};
+                config.urlFor(testContext, testData).should.equal('http://some-external-page.com/stuff-my-ghost-blog.com-around');
 
                 configUtils.set({url: 'http://my-ghost-blog.com/blog'});
                 testData = {nav: {url: 'http://my-ghost-blog.com/blog/short-and-sweet/'}};
@@ -381,8 +474,8 @@ describe('Config', function () {
         });
 
         describe('urlPathForPost', function () {
-            it('should output correct url for post', function () {
-                configUtils.set({theme: {permalinks: '/:slug/'}});
+            it('permalink is /:slug/, timezone is default', function () {
+                config.theme.permalinks = '/:slug/';
 
                 var testData = testUtils.DataGenerator.Content.posts[2],
                     postLink = '/short-and-sweet/';
@@ -390,20 +483,31 @@ describe('Config', function () {
                 config.urlPathForPost(testData).should.equal(postLink);
             });
 
-            it('should output correct url for post with date permalink', function () {
-                configUtils.set({theme: {permalinks: '/:year/:month/:day/:slug/'}});
-                var testData = testUtils.DataGenerator.Content.posts[2],
-                    today = testData.published_at,
-                    dd = ('0' + today.getDate()).slice(-2),
-                    mm = ('0' + (today.getMonth() + 1)).slice(-2),
-                    yyyy = today.getFullYear(),
-                    postLink = '/' + yyyy + '/' + mm + '/' + dd + '/short-and-sweet/';
+            it('permalink is /:year/:month/:day/:slug, blog timezone is Los Angeles', function () {
+                config.theme.timezone = 'America/Los_Angeles';
+                config.theme.permalinks = '/:year/:month/:day/:slug/';
 
+                var testData = testUtils.DataGenerator.Content.posts[2],
+                    postLink = '/2016/05/17/short-and-sweet/';
+
+                testData.published_at = new Date('2016-05-18T06:30:00.000Z');
                 config.urlPathForPost(testData).should.equal(postLink);
             });
 
-            it('should output correct url for page with date permalink', function () {
-                configUtils.set({theme: {permalinks: '/:year/:month/:day/:slug/'}});
+            it('permalink is /:year/:month/:day/:slug, blog timezone is Asia Tokyo', function () {
+                config.theme.timezone = 'Asia/Tokyo';
+                config.theme.permalinks = '/:year/:month/:day/:slug/';
+
+                var testData = testUtils.DataGenerator.Content.posts[2],
+                    postLink = '/2016/05/18/short-and-sweet/';
+
+                testData.published_at = new Date('2016-05-18T06:30:00.000Z');
+                config.urlPathForPost(testData).should.equal(postLink);
+            });
+
+            it('post is page, no permalink usage allowed at all', function () {
+                config.theme.timezone = 'America/Los_Angeles';
+                config.theme.permalinks = '/:year/:month/:day/:slug/';
 
                 var testData = testUtils.DataGenerator.Content.posts[5],
                     postLink = '/static-page-test/';
@@ -411,15 +515,38 @@ describe('Config', function () {
                 config.urlPathForPost(testData).should.equal(postLink);
             });
 
-            it('should output correct url for post with complex permalink', function () {
-                configUtils.set({theme: {permalinks: '/:year/:id/:author/'}});
+            it('permalink is /:year/:id:/:author', function () {
+                config.theme.timezone = 'America/Los_Angeles';
+                config.theme.permalinks = '/:year/:id/:author/';
 
-                var testData = _.extend(
-                        {}, testUtils.DataGenerator.Content.posts[2], {id: 3}, {author: {slug: 'joe-bloggs'}}
-                    ),
-                    today = testData.published_at,
-                    yyyy = today.getFullYear(),
-                    postLink = '/' + yyyy + '/3/joe-bloggs/';
+                var testData = _.merge(testUtils.DataGenerator.Content.posts[2], {id: 3}, {author: {slug: 'joe-blog'}}),
+                    postLink = '/2015/3/joe-blog/';
+
+                testData.published_at = new Date('2016-01-01T00:00:00.000Z');
+                config.urlPathForPost(testData).should.equal(postLink);
+            });
+
+            it('permalink is /:year/:id:/:author', function () {
+                config.theme.timezone = 'Europe/Berlin';
+                config.theme.permalinks = '/:year/:id/:author/';
+
+                var testData = _.merge(testUtils.DataGenerator.Content.posts[2], {id: 3}, {author: {slug: 'joe-blog'}}),
+                    postLink = '/2016/3/joe-blog/';
+
+                testData.published_at = new Date('2016-01-01T00:00:00.000Z');
+                config.urlPathForPost(testData).should.equal(postLink);
+            });
+
+            it('post is not published yet', function () {
+                config.theme.permalinks = '/:year/:month/:day/:slug/';
+
+                var testData = _.merge(testUtils.DataGenerator.Content.posts[2], {id: 3, published_at: null}),
+                    nowMoment = moment(),
+                    postLink = '/YYYY/MM/DD/short-and-sweet/';
+
+                postLink = postLink.replace('YYYY', nowMoment.format('YYYY'));
+                postLink = postLink.replace('MM', nowMoment.format('MM'));
+                postLink = postLink.replace('DD', nowMoment.format('DD'));
 
                 config.urlPathForPost(testData).should.equal(postLink);
             });
@@ -481,12 +608,20 @@ describe('Config', function () {
                 config.apiUrl().should.eql('https://my-ghost-blog.com/ghost/api/v0.1/');
             });
 
-            it('should return no protocol config.url if config.url is NOT https & forceAdminSSL/urlSSL is NOT set', function () {
+            it('CORS: should return no protocol config.url if config.url is NOT https & forceAdminSSL/urlSSL is NOT set', function () {
                 configUtils.set({
                     url: 'http://my-ghost-blog.com'
                 });
 
-                config.apiUrl().should.eql('//my-ghost-blog.com/ghost/api/v0.1/');
+                config.apiUrl({cors: true}).should.eql('//my-ghost-blog.com/ghost/api/v0.1/');
+            });
+
+            it('should return protocol config.url if config.url is NOT https & forceAdminSSL/urlSSL is NOT set', function () {
+                configUtils.set({
+                    url: 'http://my-ghost-blog.com'
+                });
+
+                config.apiUrl().should.eql('http://my-ghost-blog.com/ghost/api/v0.1/');
             });
         });
     });
@@ -531,7 +666,17 @@ describe('Config', function () {
             config.load().then(function (config) {
                 config.url.should.equal(configUtils.defaultConfig.url);
                 config.database.client.should.equal(configUtils.defaultConfig.database.client);
-                config.database.connection.should.eql(configUtils.defaultConfig.database.connection);
+
+                if (config.database.client === 'sqlite3') {
+                    config.database.connection.filename.should.eql(configUtils.defaultConfig.database.connection.filename);
+                } else {
+                    config.database.connection.charset.should.eql(configUtils.defaultConfig.database.connection.charset);
+                    config.database.connection.database.should.eql(configUtils.defaultConfig.database.connection.database);
+                    config.database.connection.host.should.eql(configUtils.defaultConfig.database.connection.host);
+                    config.database.connection.password.should.eql(configUtils.defaultConfig.database.connection.password);
+                    config.database.connection.user.should.eql(configUtils.defaultConfig.database.connection.user);
+                }
+
                 config.server.host.should.equal(configUtils.defaultConfig.server.host);
                 config.server.port.should.equal(configUtils.defaultConfig.server.port);
 
@@ -546,7 +691,16 @@ describe('Config', function () {
             config.load(path.join(configUtils.defaultConfig.paths.appRoot, 'config.example.js')).then(function (config) {
                 config.url.should.equal(configUtils.defaultConfig.url);
                 config.database.client.should.equal(configUtils.defaultConfig.database.client);
-                config.database.connection.should.eql(configUtils.defaultConfig.database.connection);
+
+                if (config.database.client === 'sqlite3') {
+                    config.database.connection.filename.should.eql(configUtils.defaultConfig.database.connection.filename);
+                } else {
+                    config.database.connection.charset.should.eql(configUtils.defaultConfig.database.connection.charset);
+                    config.database.connection.database.should.eql(configUtils.defaultConfig.database.connection.database);
+                    config.database.connection.host.should.eql(configUtils.defaultConfig.database.connection.host);
+                    config.database.connection.password.should.eql(configUtils.defaultConfig.database.connection.password);
+                    config.database.connection.user.should.eql(configUtils.defaultConfig.database.connection.user);
+                }
                 config.server.host.should.equal(configUtils.defaultConfig.server.host);
                 config.server.port.should.equal(configUtils.defaultConfig.server.port);
 
@@ -571,28 +725,28 @@ describe('Config', function () {
 
         it('accepts urls with a valid scheme', function (done) {
             // replace the config file with invalid data
-            overrideReadFileConfig({url: 'http://testurl.com'});
+            overrideReadFileConfig({url: 'http://localhost'});
 
             config.load().then(function (localConfig) {
-                localConfig.url.should.equal('http://testurl.com');
+                localConfig.url.should.equal('http://localhost');
 
                 // Next test
-                overrideReadFileConfig({url: 'https://testurl.com'});
+                overrideReadFileConfig({url: 'https://localhost'});
                 return config.load();
             }).then(function (localConfig) {
-                localConfig.url.should.equal('https://testurl.com');
+                localConfig.url.should.equal('https://localhost');
 
                 // Next test
-                overrideReadFileConfig({url: 'http://testurl.com/blog/'});
+                overrideReadFileConfig({url: 'http://localhost/blog/'});
                 return config.load();
             }).then(function (localConfig) {
-                localConfig.url.should.equal('http://testurl.com/blog/');
+                localConfig.url.should.equal('http://localhost/blog/');
 
                 // Next test
-                overrideReadFileConfig({url: 'http://testurl.com/ghostly/'});
+                overrideReadFileConfig({url: 'http://localhost/ghostly/'});
                 return config.load();
             }).then(function (localConfig) {
-                localConfig.url.should.equal('http://testurl.com/ghostly/');
+                localConfig.url.should.equal('http://localhost/ghostly/');
 
                 done();
             }).catch(done);

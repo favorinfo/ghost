@@ -1,4 +1,3 @@
-/*globals describe, after, before, beforeEach, afterEach, it*/
 var should     = require('should'),
     Promise    = require('bluebird'),
     sinon      = require('sinon'),
@@ -6,6 +5,7 @@ var should     = require('should'),
     rewire     = require('rewire'),
 
     // Stuff we are testing
+    fs         = require('fs'),
     chalk      = require('chalk'),
     errors     = rewire('../../server/errors'),
     configUtils = require('../utils/configUtils'),
@@ -311,7 +311,8 @@ describe('Error handling', function () {
     });
 
     describe('Rendering', function () {
-        var sandbox;
+        var app,
+            sandbox;
 
         before(function () {
             configUtils.set({
@@ -319,7 +320,6 @@ describe('Error handling', function () {
                     themePath: '/content/themes',
                     availableThemes: {
                         casper: {
-                            assets: null,
                             'default.hbs': '/content/themes/casper/default.hbs',
                             'index.hbs': '/content/themes/casper/index.hbs',
                             'page.hbs': '/content/themes/casper/page.hbs',
@@ -340,6 +340,7 @@ describe('Error handling', function () {
         });
 
         beforeEach(function () {
+            app = express();
             sandbox = sinon.sandbox.create();
         });
 
@@ -349,10 +350,9 @@ describe('Error handling', function () {
 
         it('Renders end-of-middleware 404 errors correctly', function (done) {
             var req = {method: 'GET'},
-                res = express.response;
+                res = app.response;
 
-            sandbox.stub(express.response, 'render', function (view, options, fn) {
-                /*jshint unused:false */
+            sandbox.stub(res, 'render', function (view, options/*, fn*/) {
                 view.should.match(/user-error\.hbs/);
 
                 // Test that the message is correct
@@ -364,15 +364,15 @@ describe('Error handling', function () {
                 done();
             });
 
-            sandbox.stub(express.response, 'status', function (status) {
-                res.statusCode = status;
-                return res;
+            sandbox.stub(res, 'status', function (status) {
+                this.statusCode = status;
+                return this;
             });
 
             sandbox.stub(res, 'set', function (value) {
                 // Test that the headers are correct
                 value['Cache-Control'].should.eql('no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
-                return res;
+                return this;
             });
 
             errors.error404(req, res, done);
@@ -381,10 +381,9 @@ describe('Error handling', function () {
         it('Renders thrown 404 errors correctly', function (done) {
             var err = new Error('A thing was not found'),
                 req = {method: 'GET'},
-                res = express.response;
+                res = app.response;
 
-            sandbox.stub(express.response, 'render', function (view, options, fn) {
-                /*jshint unused:false */
+            sandbox.stub(res, 'render', function (view, options/*, fn*/) {
                 view.should.match(/user-error\.hbs/);
 
                 // Test that the message is correct
@@ -396,15 +395,15 @@ describe('Error handling', function () {
                 done();
             });
 
-            sandbox.stub(express.response, 'status', function (status) {
-                res.statusCode = status;
-                return res;
+            sandbox.stub(res, 'status', function (status) {
+                this.statusCode = status;
+                return this;
             });
 
             sandbox.stub(res, 'set', function (value) {
                 // Test that the headers are correct
                 value['Cache-Control'].should.eql('no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
-                return res;
+                return this;
             });
 
             err.status = 404;
@@ -414,10 +413,9 @@ describe('Error handling', function () {
         it('Renders thrown errors correctly', function (done) {
             var err = new Error('I am a big bad error'),
                 req = {method: 'GET'},
-                res = express.response;
+                res = app.response;
 
-            sandbox.stub(express.response, 'render', function (view, options, fn) {
-                /*jshint unused:false */
+            sandbox.stub(res, 'render', function (view, options/*, fn*/) {
                 view.should.match(/user-error\.hbs/);
 
                 // Test that the message is correct
@@ -432,12 +430,12 @@ describe('Error handling', function () {
             sandbox.stub(res, 'set', function (value) {
                 // Test that the headers are correct
                 value['Cache-Control'].should.eql('no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
-                return res;
+                return this;
             });
 
-            sandbox.stub(express.response, 'status', function (status) {
-                res.statusCode = status;
-                return res;
+            sandbox.stub(res, 'status', function (status) {
+                this.statusCode = status;
+                return this;
             });
 
             errors.error500(err, req, res, null);
@@ -446,10 +444,9 @@ describe('Error handling', function () {
         it('Renders 500 errors correctly', function (done) {
             var err = new Error('I am a big bad error'),
                 req = {method: 'GET'},
-                res = express.response;
+                res = app.response;
 
-            sandbox.stub(express.response, 'render', function (view, options, fn) {
-                /*jshint unused:false */
+            sandbox.stub(res, 'render', function (view, options/*, fn*/) {
                 view.should.match(/user-error\.hbs/);
 
                 // Test that the message is correct
@@ -461,15 +458,15 @@ describe('Error handling', function () {
                 done();
             });
 
-            sandbox.stub(express.response, 'status', function (status) {
-                res.statusCode = status;
-                return res;
+            sandbox.stub(res, 'status', function (status) {
+                this.statusCode = status;
+                return this;
             });
 
             sandbox.stub(res, 'set', function (value) {
                 // Test that the headers are correct
                 value['Cache-Control'].should.eql('no-cache, private, no-store, must-revalidate, max-stale=0, post-check=0, pre-check=0');
-                return res;
+                return this;
             });
 
             err.statusCode = 500;
@@ -495,6 +492,11 @@ describe('Error handling', function () {
                     }
                 },
                 next = null;
+
+            sandbox.stub(fs, 'stat', function (path, cb) {
+                cb(null, {isFile: function () { return true; }});
+            });
+
             errors.updateActiveTheme('theme-with-error');
             errors.renderErrorPage(statusCode, error, req, res, next);
         });

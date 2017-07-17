@@ -13,12 +13,6 @@ var hbs             = require('express-hbs'),
     ghost_foot;
 
 ghost_foot = function (options) {
-    var footOptions = (options || {}).hash || {},
-        includeJquery;
-
-    footOptions = _.pick(footOptions, ['jquery']);
-    includeJquery = (_.has(footOptions, 'jquery') && footOptions.jquery === false ) ? false : true;
-
     /*jshint unused:false*/
     var foot = [];
 

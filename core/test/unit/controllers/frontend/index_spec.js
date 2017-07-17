@@ -1,10 +1,8 @@
-/*globals describe, beforeEach, afterEach, it*/
 var moment   = require('moment'),
     should   = require('should'),
     sinon    = require('sinon'),
     Promise  = require('bluebird'),
     _        = require('lodash'),
-    path     = require('path'),
 
 // Stuff we are testing
     api      = require('../../../../server/api'),
@@ -427,16 +425,6 @@ describe('Frontend Controller', function () {
                     frontend.single(req, res, failTest(done));
                 });
 
-                it('will NOT render post via /YYYY/MM/DD/:slug/ with non-matching date in url', function (done) {
-                    var date = moment(mockPosts[1].published_at).subtract(1, 'days').format('YYYY/MM/DD');
-                    req.path = '/' + [date, mockPosts[1].posts[0].slug].join('/') + '/';
-
-                    frontend.single(req, res, function () {
-                        res.render.called.should.be.false();
-                        done();
-                    });
-                });
-
                 it('will NOT render post via /:slug/', function (done) {
                     req.path = '/' + mockPosts[1].posts[0].slug + '/';
 
@@ -727,69 +715,6 @@ describe('Frontend Controller', function () {
                     frontend.single(req, res, failTest(done));
                 });
             });
-        });
-    });
-
-    describe('private', function () {
-        var res, req, defaultPath;
-
-        beforeEach(function () {
-            res = {
-                locals: {version: ''},
-                render: sandbox.spy()
-            };
-
-            req = {
-                app: {get: function () { return 'casper'; }},
-                route: {path: '/private/?r=/'},
-                query: {r: ''},
-                params: {}
-            };
-
-            defaultPath = path.join(configUtils.config.paths.appRoot, '/core/server/views/private.hbs');
-
-            configUtils.set({
-                theme: {
-                    permalinks: '/:slug/'
-                }
-            });
-        });
-
-        it('Should render default password page when theme has no password template', function (done) {
-            configUtils.set({paths: {availableThemes: {casper: {}}}});
-
-            res.render = function (view) {
-                view.should.eql(defaultPath);
-                done();
-            };
-
-            frontend.private(req, res, failTest(done));
-        });
-
-        it('Should render theme password page when it exists', function (done) {
-            configUtils.set({paths: {availableThemes: {casper: {
-                'private.hbs': '/content/themes/casper/private.hbs'
-            }}}});
-
-            res.render = function (view) {
-                view.should.eql('private');
-                done();
-            };
-
-            frontend.private(req, res, failTest(done));
-        });
-
-        it('Should render with error when error is passed in', function (done) {
-            configUtils.set({paths: {availableThemes: {casper: {}}}});
-            res.error = 'Test Error';
-
-            res.render = function (view, context) {
-                view.should.eql(defaultPath);
-                context.should.eql({error: 'Test Error'});
-                done();
-            };
-
-            frontend.private(req, res, failTest(done));
         });
     });
 

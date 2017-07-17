@@ -1,4 +1,3 @@
-/*global describe, it, before, after */
 var testUtils     = require('../../../utils'),
     should        = require('should'),
     supertest     = require('supertest'),
@@ -21,7 +20,7 @@ describe('Public API', function () {
         ghost().then(function (ghostServer) {
             request = supertest.agent(ghostServer.rootApp);
         }).then(function () {
-            return testUtils.doAuth(request, 'posts', 'tags');
+            return testUtils.doAuth(request, 'posts', 'tags', 'trusted_domains');
         }).then(function (token) {
             // enable public API
             request.put(testUtils.API.getApiQuery('settings/'))
@@ -56,7 +55,37 @@ describe('Public API', function () {
                     return done(err);
                 }
 
+                res.headers.vary.should.eql('Origin, Accept-Encoding');
+                should.exist(res.headers['access-control-allow-origin']);
                 should.not.exist(res.headers['x-cache-invalidate']);
+
+                var jsonResponse = res.body;
+                should.exist(jsonResponse.posts);
+                testUtils.API.checkResponse(jsonResponse, 'posts');
+                jsonResponse.posts.should.have.length(5);
+                testUtils.API.checkResponse(jsonResponse.posts[0], 'post');
+                testUtils.API.checkResponse(jsonResponse.meta.pagination, 'pagination');
+                _.isBoolean(jsonResponse.posts[0].featured).should.eql(true);
+                _.isBoolean(jsonResponse.posts[0].page).should.eql(true);
+                done();
+            });
+    });
+
+    it('browse posts from different origin', function (done) {
+        request.get(testUtils.API.getApiQuery('posts/?client_id=ghost-admin&client_secret=not_available'))
+            .set('Origin', 'https://example.com')
+            .expect('Content-Type', /json/)
+            .expect('Cache-Control', testUtils.cacheRules.private)
+            .expect(200)
+            .end(function (err, res) {
+                if (err) {
+                    return done(err);
+                }
+
+                res.headers.vary.should.eql('Origin, Accept-Encoding');
+                should.exist(res.headers['access-control-allow-origin']);
+                should.not.exist(res.headers['x-cache-invalidate']);
+
                 var jsonResponse = res.body;
                 should.exist(jsonResponse.posts);
                 testUtils.API.checkResponse(jsonResponse, 'posts');
@@ -198,22 +227,20 @@ describe('Public API', function () {
             });
     });
 
-    it('denies access from invalid origin', function (done) {
+    it('does not send CORS headers on an invalid origin', function (done) {
         request.get(testUtils.API.getApiQuery('posts/?client_id=ghost-admin&client_secret=not_available'))
             .set('Origin', 'http://invalid-origin')
             .expect('Content-Type', /json/)
             .expect('Cache-Control', testUtils.cacheRules.private)
-            .expect(401)
+            .expect(200)
             .end(function (err, res) {
                 if (err) {
                     return done(err);
                 }
 
                 should.not.exist(res.headers['x-cache-invalidate']);
-                var jsonResponse = res.body;
-                should.exist(jsonResponse);
-                should.exist(jsonResponse.errors);
-                testUtils.API.checkResponseValue(jsonResponse.errors[0], ['message', 'errorType']);
+                should.not.exist(res.headers['access-control-allow-origin']);
+
                 done();
             });
     });
@@ -234,6 +261,29 @@ describe('Public API', function () {
                 should.exist(jsonResponse);
                 should.exist(jsonResponse.errors);
                 testUtils.API.checkResponseValue(jsonResponse.errors[0], ['message', 'errorType']);
+                done();
+            });
+    });
+
+    it('throws version mismatch error when request includes a version', function (done) {
+        request.get(testUtils.API.getApiQuery('posts/?client_id=ghost-admin&client_secret=not_available'))
+            .set('Origin', testUtils.API.getURL())
+            .set('X-Ghost-Version', '0.3')
+            .expect('Content-Type', /json/)
+            .expect('Cache-Control', testUtils.cacheRules.private)
+            .expect(400)
+            .end(function (err, res) {
+                if (err) {
+                    return done(err);
+                }
+
+                var jsonResponse = res.body;
+
+                should.exist(jsonResponse);
+                should.exist(jsonResponse.errors);
+                testUtils.API.checkResponseValue(jsonResponse.errors[0], ['message', 'errorType']);
+                jsonResponse.errors[0].errorType.should.eql('VersionMismatchError');
+
                 done();
             });
     });

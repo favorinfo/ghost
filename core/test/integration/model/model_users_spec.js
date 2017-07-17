@@ -1,9 +1,8 @@
-/*globals describe, before, beforeEach, afterEach, it*/
 var testUtils   = require('../../utils'),
     should      = require('should'),
     Promise     = require('bluebird'),
     sinon       = require('sinon'),
-    uuid        = require('node-uuid'),
+    uuid        = require('uuid'),
     _           = require('lodash'),
 
     // Stuff we are testing
@@ -11,6 +10,8 @@ var testUtils   = require('../../utils'),
     gravatar    = require('../../../server/utils/gravatar'),
     UserModel   = require('../../../server/models/user').User,
     RoleModel   = require('../../../server/models/role').Role,
+    models      = require('../../../server/models'),
+    errors      = require('../../../server/errors'),
     events      = require('../../../server/events'),
     context     = testUtils.context.admin,
     sandbox     = sinon.sandbox.create();
@@ -30,6 +31,16 @@ describe('User Model', function run() {
 
     beforeEach(function () {
         eventSpy = sandbox.spy(events, 'emit');
+
+        /**
+         * @TODO:
+         * - this is not pretty
+         * - eventSpy get's now more events then expected
+         * - because on migrations.populate we trigger populateDefaults
+         * - how to solve? eventSpy must be local and not global?
+         */
+        models.init();
+        sandbox.stub(models.Settings, 'populateDefaults').returns(Promise.resolve());
     });
 
     describe('Registration', function runRegistration() {
@@ -126,6 +137,20 @@ describe('User Model', function run() {
                 should.not.exist(createdUser.image);
                 done();
             }).catch(done);
+        });
+
+        it('can set password of only numbers', function () {
+            var userData = testUtils.DataGenerator.forModel.users[0];
+
+            // avoid side-effects!
+            userData = _.cloneDeep(userData);
+            userData.password = 12345678;
+
+            // mocha supports promises
+            return UserModel.add(userData, context).then(function (createdUser) {
+                should.exist(createdUser);
+                // cannot validate password
+            });
         });
 
         it('can find by email and is case insensitive', function (done) {
@@ -253,7 +278,7 @@ describe('User Model', function run() {
             }).catch(done);
         });
 
-        it('can findPage with limit all', function (done) {
+        it('can findPage with limit all', function () {
             return testUtils.fixtures.createExtraUsers().then(function () {
                 return UserModel.findPage({limit: 'all'});
             }).then(function (results) {
@@ -261,9 +286,7 @@ describe('User Model', function run() {
                 results.meta.pagination.limit.should.equal('all');
                 results.meta.pagination.pages.should.equal(1);
                 results.users.length.should.equal(7);
-
-                done();
-            }).catch(done);
+            });
         });
 
         it('can NOT findPage for a page that overflows the datatype', function (done) {
@@ -294,7 +317,7 @@ describe('User Model', function run() {
             }).catch(done);
         });
 
-        it('can findOne by role name', function (done) {
+        it('can findOne by role name', function () {
             return testUtils.fixtures.createExtraUsers().then(function () {
                 return Promise.join(UserModel.findOne({role: 'Owner'}), UserModel.findOne({role: 'Editor'}));
             }).then(function (results) {
@@ -312,9 +335,7 @@ describe('User Model', function run() {
 
                 owner.roles[0].name.should.equal('Owner');
                 editor.roles[0].name.should.equal('Editor');
-
-                done();
-            }).catch(done);
+            });
         });
 
         it('can invite user', function (done) {
@@ -404,6 +425,19 @@ describe('User Model', function run() {
             }).catch(function () {
                 done();
             });
+        });
+
+        it('can NOT set an already existing email address', function (done) {
+            var secondEmail = testUtils.DataGenerator.Content.users[1].email;
+
+            UserModel.edit({email: secondEmail}, {id: 1})
+                .then(function () {
+                    done(new Error('Already existing email address was accepted'));
+                })
+                .catch(function (err) {
+                    (err instanceof errors.ValidationError).should.eql(true);
+                    done();
+                });
         });
 
         it('can edit invited user', function (done) {
@@ -651,6 +685,47 @@ describe('User Model', function run() {
 
                 done();
             });
+        });
+    });
+
+    describe('User Login', function () {
+        beforeEach(testUtils.setup('owner'));
+
+        it('gets the correct validations when entering an invalid password', function () {
+            var object = {email: 'jbloggs@example.com', password: 'wrong'};
+
+            function userWasLoggedIn() {
+                throw new Error('User should not have been logged in.');
+            }
+
+            function checkAttemptsError(number) {
+                return function (error) {
+                    should.exist(error);
+
+                    error.errorType.should.equal('UnauthorizedError');
+                    error.message.should.match(new RegExp(number + ' attempt'));
+
+                    return UserModel.check(object);
+                };
+            }
+
+            function checkLockedError(error) {
+                should.exist(error);
+
+                error.errorType.should.equal('NoPermissionError');
+                error.message.should.match(/^Your account is locked/);
+            }
+
+            return UserModel.check(object).then(userWasLoggedIn)
+                .catch(checkAttemptsError(4))
+                .then(userWasLoggedIn)
+                .catch(checkAttemptsError(3))
+                .then(userWasLoggedIn)
+                .catch(checkAttemptsError(2))
+                .then(userWasLoggedIn)
+                .catch(checkAttemptsError(1))
+                .then(userWasLoggedIn)
+                .catch(checkLockedError);
         });
     });
 });

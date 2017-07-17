@@ -1,4 +1,3 @@
-/*global describe, it, before, after */
 
 // # Frontend Route tests
 // As it stands, these tests depend on the database, and as such are integration tests.
@@ -49,6 +48,7 @@ describe('Admin Routing', function () {
         }).catch(function (e) {
             console.log('Ghost Error: ', e);
             console.log(e.stack);
+            done(e);
         });
     });
 

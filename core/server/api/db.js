@@ -1,16 +1,13 @@
 // # DB API
 // API for DB operations
-var _                = require('lodash'),
-    Promise          = require('bluebird'),
-    dataExport       = require('../data/export'),
+var Promise          = require('bluebird'),
+    exporter         = require('../data/export'),
     importer         = require('../data/importer'),
     backupDatabase   = require('../data/migration').backupDatabase,
     models           = require('../models'),
     errors           = require('../errors'),
     utils            = require('./utils'),
     pipeline         = require('../utils/pipeline'),
-    i18n             = require('../i18n'),
-
     api              = {},
     docName      = 'db',
     db;
@@ -38,7 +35,7 @@ db = {
 
         // Export data, otherwise send error 500
         function exportContent() {
-            return dataExport().then(function (exportedData) {
+            return exporter.doExport().then(function (exportedData) {
                 return {db: [exportedData]};
             }).catch(function (error) {
                 return Promise.reject(new errors.InternalServerError(error.message || error));
@@ -62,30 +59,10 @@ db = {
      */
     importContent: function (options) {
         var tasks = [];
-
         options = options || {};
 
-        function validate(options) {
-            // Check if a file was provided
-            if (!utils.checkFileExists(options, 'importfile')) {
-                return Promise.reject(new errors.ValidationError(i18n.t('errors.api.db.selectFileToImport')));
-            }
-
-            // Check if the file is valid
-            if (!utils.checkFileIsValid(options.importfile, importer.getTypes(), importer.getExtensions())) {
-                return Promise.reject(new errors.UnsupportedMediaTypeError(
-                    i18n.t('errors.api.db.unsupportedFile') +
-                        _.reduce(importer.getExtensions(), function (memo, ext) {
-                            return memo ? memo + ', ' + ext : ext;
-                        })
-                ));
-            }
-
-            return options;
-        }
-
         function importContent(options) {
-            return importer.importFromFile(options.importfile)
+            return importer.importFromFile(options)
                 .then(function () {
                     api.settings.updateSettingsCache();
                 })
@@ -93,7 +70,6 @@ db = {
         }
 
         tasks = [
-            validate,
             utils.handlePermissions(docName, 'importContent'),
             importContent
         ];
@@ -109,16 +85,23 @@ db = {
      * @returns {Promise} Success
      */
     deleteAllContent: function (options) {
-        var tasks;
+        var tasks,
+            queryOpts = {columns: 'id', context: {internal: true}};
 
         options = options || {};
 
         function deleteContent() {
-            return Promise.resolve(models.deleteAllContent())
-                .return({db: []})
-                .catch(function (error) {
-                    return Promise.reject(new errors.InternalServerError(error.message || error));
-                });
+            var collections = [
+                models.Post.findAll(queryOpts),
+                models.Tag.findAll(queryOpts)
+            ];
+
+            return Promise.each(collections, function then(Collection) {
+                return Collection.invokeThen('destroy', queryOpts);
+            }).return({db: []})
+            .catch(function (error) {
+                throw new errors.InternalServerError(error.message || error);
+            });
         }
 
         tasks = [
